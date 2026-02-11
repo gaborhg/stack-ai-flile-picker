@@ -154,6 +154,9 @@ export function FilePicker() {
           );
           setPendingRemoveItem(null);
         },
+        onError: () => {
+          deindexMutation.reset();
+        },
       },
     );
   }, [
