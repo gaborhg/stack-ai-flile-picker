@@ -87,7 +87,7 @@ Remove From Knowledge Base Dialog
 
 You can test the deployed application at:
 
-https://stack-ai-flile-picker.vercel.app/
+https://stack-ai-file-select.vercel.app/
 
 ### Further Notes
 
