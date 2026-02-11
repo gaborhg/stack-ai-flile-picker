@@ -24,6 +24,7 @@ import {
   useSyncKbMutation,
   type FolderPage,
 } from "@/lib/queries";
+import { clearKbStatusCache } from "@/lib/driveClient";
 import type { InfiniteData } from "@tanstack/react-query";
 import { VirtualizedFileList } from "@/components/VirtualizedFileList";
 import type { DriveItem, SortBy, SortDirection } from "@/lib/types";
@@ -175,9 +176,7 @@ export function FilePicker() {
         if (!previous) return previous;
         const pages = previous.pages?.map((page) => {
           const items = (page.items ?? []).map((item: DriveItem) =>
-            localKbIds.has(item.id) &&
-            !item.indexed &&
-            item.status !== "pending"
+            localKbIds.has(item.id) && !item.indexed && item.status !== "pending"
               ? { ...item, status: "pending" as const }
               : item,
           );
@@ -271,6 +270,7 @@ export function FilePicker() {
               variant="outline"
               title="Refetches the current folder. Your selections remain preserved."
               onClick={() => {
+                clearKbStatusCache(currentFolderPath);
                 queryClient.removeQueries({
                   queryKey: folderContentsKey(
                     currentFolderId,

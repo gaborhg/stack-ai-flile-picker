@@ -1,6 +1,40 @@
 import type { DriveItem } from "./types";
 
-type FolderPage = { items: DriveItem[]; nextCursor?: string | null };
+export type FolderPage = { items: DriveItem[]; nextCursor?: string | null };
+export type DeindexVariables = { itemId: string; itemPath: string };
+
+type KbStatusByResourceId = Record<string, string>;
+const kbStatusCache = new Map<string, KbStatusByResourceId>();
+
+export function clearKbStatusCache(folderPath?: string): void {
+  if (folderPath) {
+    kbStatusCache.delete(folderPath);
+    return;
+  }
+  kbStatusCache.clear();
+}
+
+async function getKbStatusByFolderPath(
+  folderPath: string,
+): Promise<KbStatusByResourceId | null> {
+  const cached = kbStatusCache.get(folderPath);
+  if (cached) {
+    return cached;
+  }
+
+  const kbResp = await fetch("/api/drive/kb-status", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ folderPath }),
+  });
+  if (!kbResp.ok) {
+    return null;
+  }
+  const kbJson = await kbResp.json();
+  const statusObj: KbStatusByResourceId = kbJson.statusByResourceId ?? {};
+  kbStatusCache.set(folderPath, statusObj);
+  return statusObj;
+}
 
 type ListRequest = {
   folderId: string;
@@ -27,10 +61,21 @@ export async function listFolderContentsPage(
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Failed to list folder contents: ${resp.status} ${text}`);
+    throw new Error(`Failed to list folder contents`);
   }
   const json = (await resp.json()) as FolderPage;
+
+  if (folderPath !== undefined) {
+    const statusObj = await getKbStatusByFolderPath(folderPath);
+    if (statusObj) {
+      const merged = json.items.map((item) => {
+        const status = statusObj[item.id] ?? statusObj[item.name];
+        return { ...item, indexed: status === "indexed", status } as DriveItem;
+      });
+      return { items: merged, nextCursor: json.nextCursor };
+    }
+  }
+
   return json;
 }
 
@@ -46,7 +91,6 @@ export async function syncKb(connectionSourceIds: string[]): Promise<void> {
   }
 }
 
-export type DeindexVariables = { itemId: string; itemPath: string };
 export async function deindexItem(
   itemId: string,
   itemPath: string,

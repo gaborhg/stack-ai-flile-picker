@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "../../../../lib/driveApi";
+import { getSession } from "@/lib/driveApi";
 
 export async function POST(request: Request) {
   try {
@@ -33,8 +33,7 @@ export async function POST(request: Request) {
       }),
     });
     if (!putResp.ok) {
-      const text = await putResp.text().catch(() => "");
-      return new Response(text || `Failed to update KB: ${putResp.status}`, {
+      return new Response("Failed to update KB", {
         status: putResp.status,
       });
     }
@@ -45,16 +44,14 @@ export async function POST(request: Request) {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!syncResp.ok) {
-      const text = await syncResp.text().catch(() => "");
       return new Response(
-        text || `Failed to trigger sync: ${syncResp.status}`,
+        "Failed to trigger sync",
         { status: syncResp.status },
       );
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(msg || "Server error", { status: 500 });
+  } catch {
+    return new Response("Server error", { status: 500 });
   }
 }

@@ -29,12 +29,6 @@ type KbResourceItem = {
   [key: string]: unknown;
 };
 
-// Server-side caching disabled: always fetch fresh KB status per request.
-export function clearKbStatusCacheForPath(_: string | undefined) {
-  // no-op (server does not cache)
-  return;
-}
-
 let sessionPromise: Promise<StackAiSession> | null = null;
 
 async function createSession(): Promise<StackAiSession> {
@@ -171,79 +165,6 @@ export function mapResourceToDriveItem(
 }
 
 /**
- * Fetch a single page of folder contents. Returns items and an optional nextCursor.
- */
-export async function listFolderContentsPage(
-  folderId: string,
-  folderPath?: string,
-  opts?: { pageSize?: number; cursor?: string | null },
-): Promise<{ items: DriveItem[]; nextCursor?: string | null }> {
-  const { accessToken, connectionId, knowledgeBaseId } = await getSession();
-
-  const headers = {
-    Authorization: `Bearer ${accessToken}`,
-  };
-
-  const params = new URLSearchParams();
-  if (folderId !== "root") {
-    params.set("resource_id", folderId);
-  }
-  params.set("page_size", String(opts?.pageSize ?? 10));
-  if (opts?.cursor) {
-    params.set("cursor", opts.cursor);
-  }
-
-  let url = `${BACKEND_URL}${API_PREFIX}/connections/${connectionId}/resources/children`;
-  const queryString = params.toString();
-  if (queryString) {
-    url += `?${queryString}`;
-  }
-
-  const response = await fetch(url, { headers });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to list resources for folder "${folderId}". Status: ${response.status}`,
-    );
-  }
-
-  const json = (await response.json()) as {
-    data?: ConnectionResourceResponse[];
-    next_cursor?: string | null;
-    current_cursor?: string | null;
-  };
-
-  const resources = json.data ?? [];
-  let items = resources.map(mapResourceToDriveItem);
-
-  // Merge indexed status from Knowledge Base (client-side: fetch all KB pages and map by resource_id).
-  if (knowledgeBaseId && folderPath !== undefined) {
-    const statusByResourceId = await fetchAllKbIndexedStatus(
-      accessToken,
-      knowledgeBaseId,
-      folderPath,
-    );
-    items = items.map((item) => {
-      const kbStatus =
-        statusByResourceId.get(item.id) || statusByResourceId.get(item.name);
-      if (kbStatus === undefined) return item;
-      return {
-        ...item,
-        indexed: kbStatus === "indexed",
-        status: kbStatus,
-      };
-    });
-  }
-
-  items = items.sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === "folder" ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  });
-
-  return { items, nextCursor: json.next_cursor ?? null };
-}
-/**
  * Fetches which resources are indexed in the Knowledge Base for a given path.
  * This version will iterate over cursor pages and return a map of resource_id -> status.
  */
@@ -251,8 +172,8 @@ export async function fetchAllKbIndexedStatus(
   accessToken: string,
   knowledgeBaseId: string,
   resourcePath: string,
-): Promise<Map<string, KbResourceStatus>> {
-  const map = new Map<string, KbResourceStatus>();
+): Promise<Record<string, KbResourceStatus>> {
+  const result: Record<string, KbResourceStatus> = {};
   let cursor: string | null = null;
   const pathForQuery =
     resourcePath === "" || resourcePath === "/"
@@ -287,19 +208,19 @@ export async function fetchAllKbIndexedStatus(
           const status: KbResourceStatus = item.indexed_at
             ? "indexed"
             : "pending";
-          map.set(inodeId, status);
+          result[inodeId] = status;
         }
       } else {
         const status: KbResourceStatus = item.indexed_at
           ? "indexed"
           : (item.status ?? "pending");
-        map.set(id, status);
+        result[id] = status;
       }
     }
     cursor = json.next_cursor ?? null;
   } while (cursor);
 
-  return map;
+  return result;
 }
 
 async function putKbUpdate(
